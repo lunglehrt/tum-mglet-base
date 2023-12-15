@@ -169,6 +169,178 @@ CONTAINS
         CALL this%stencils%finish()
     END SUBROUTINE read_stencils
 
+    SUBROUTINE giteig()
+        ! Subroutine arguments
+        ! none...
+
+        ! Local variables
+        INTEGER(intk) :: k, j, i
+        INTEGER(intk) :: kk, jj, ii
+        INTEGER(intk) :: igr, igrid
+        INTEGER(intk) :: nfro, nbac, nrgt, nlft, nbot, ntop
+
+        REAL(realk), POINTER, CONTIGUOUS :: dx(:), dy(:), dz(:)
+        REAL(realk), POINTER, CONTIGUOUS :: gsae(:,:,:),  gsaw(:,:,:), &
+            gsan(:,:,:), gsas(:,:,:), gsat(:,:,:), gsab(:,:,:)
+        REAL(realk), POINTER, CONTIGUOUS :: gsap(:, :, :)
+        REAL(realk), POINTER, CONTIGUOUS :: au(:, :, :), av(:,:,:), aw(:,:,:)
+
+        REAL(realk) :: be, bw, bn, bs, bt, bb
+        REAL(realk) :: areae, areaw, arean, areas, areat, areab
+
+        ! 3-D fields used in the pressure solver
+        CALL set_field("GSAW")
+        CALL set_field("GSAE")
+        CALL set_field("GSAS")
+        CALL set_field("GSAN")
+        CALL set_field("GSAB")
+        CALL set_field("GSAT")
+        CALL set_field("GSAP")
+
+        DO igr = 1, nmygrids
+            igrid = mygrids(igr)
+
+            CALL get_mgdims(kk, jj, ii, igrid)
+
+            CALL get_fieldptr(dx, "DX", igrid)
+            CALL get_fieldptr(dy, "DY", igrid)
+            CALL get_fieldptr(dz, "DZ", igrid)
+            CALL get_fieldptr(au, "AU", igrid)
+            CALL get_fieldptr(av, "AV", igrid)
+            CALL get_fieldptr(aw, "AW", igrid)
+
+            CALL get_fieldptr(gsaw, "GSAW", igrid)
+            CALL get_fieldptr(gsae, "GSAE", igrid)
+            CALL get_fieldptr(gsas, "GSAS", igrid)
+            CALL get_fieldptr(gsan, "GSAN", igrid)
+            CALL get_fieldptr(gsab, "GSAB", igrid)
+            CALL get_fieldptr(gsat, "GSAT", igrid)
+
+            CALL get_fieldptr(gsap, "GSAP", igrid)
+
+            ! Open area of the cell faces
+            areae = au(k, j, i) * ddy(j) * ddz(k)
+            areaw = au(k, j, i-1) * ddy(j) * ddz(k)
+            arean = av(k, j, i) * ddx(i) * ddz(k)
+            areas = av(k, j-1, i) * ddx(i) * ddz(k)
+            areat = aw(k, j, i) * ddx(i) * ddy(j)
+            areab = aw(k-1, j, i) * ddx(i) * ddy(j)
+
+            ! Markers indicating whether the cell faces of the neighbouring
+            ! cells are open or closed
+            be = CEILING(au(k, j, i+1))
+            bw = CEILING(au(k, j, i-1))
+            bn = CEILING(av(k, j+1, i))
+            bs = CEILING(av(k, j-1, i))
+            bt = CEILING(aw(k+1, j, i))
+            bb = CEILING(aw(k-1, j, i))
+
+            DO i = 3, ii-2
+                ae(i) = 2.0/((dx(i-1)+dx(i))*dx(i))
+                aw(i) = 2.0/((dx(i-1)+dx(i))*dx(i-1))
+            END DO
+            DO j = 3, jj-2
+                an(j) = 2.0/((dy(j-1)+dy(j))*dy(j))
+                as(j) = 2.0/((dy(j-1)+dy(j))*dy(j-1))
+            END DO
+            DO k = 3, kk-2
+                at(k) = 2.0/((dz(k-1)+dz(k))*dz(k))
+                ab(k) = 2.0/((dz(k-1)+dz(k))*dz(k-1))
+            END DO
+
+            DO i = 3, ii-2
+                DO j = 3, jj-2
+                    DO k = 3, kk-2
+                        ap(k, j, i) = -2.0/(dx(i-1)*dx(i)) &
+                            -2.0/(dy(j-1)*dy(j)) &
+                            -2.0/(dz(k-1)*dz(k))
+                    END DO
+                END DO
+            END DO
+
+            DO i = 3, ii-2
+                DO j = 3, jj-2
+                    DO k = 3, kk-2
+                        ap(k, j, i) = ap(k, j, i) &
+                            + aw(i)*(1.0-bp(k, j, i-1)*bp(k, j, i)) &
+                            + ae(i)*(1.0-bp(k, j, i  )*bp(k, j, i+1)) &
+                            + as(j)*(1.0-bp(k, j-1, i)*bp(k, j  , i)) &
+                            + an(j)*(1.0-bp(k, j  , i)*bp(k, j+1, i)) &
+                            + ab(k)*(1.0-bp(k-1, j, i)*bp(k  , j, i)) &
+                            + at(k)*(1.0-bp(k  , j, i)*bp(k+1, j, i))
+                    END DO
+                END DO
+            END DO
+
+            CALL get_mgbasb(nfro, nbac, nrgt, nlft, nbot, ntop, igrid)
+
+            ! Front/West
+            IF (nfro == 2 .OR. nfro == 5 .OR. nfro == 6 .OR. nfro == 19) THEN
+                DO j = 3, jj-2
+                    DO k = 3, kk-2
+                        ap(k, j, 3) = ap(k, j, 3) &
+                            + aw(3)*(bp(k, j, 2)*bp(k, j, 3))
+                    END DO
+                END  DO
+                aw(3) = 0.0
+            END IF
+
+            ! Back/East
+            IF (nbac == 2 .OR. nbac == 5 .OR. nbac == 6) THEN
+                DO j = 3, jj-2
+                    DO k = 3, kk-2
+                        ap(k, j, ii-2) = ap(k, j, ii-2) &
+                            + ae(ii-2)*(bp(k, j, ii-2)*bp(k, j, ii-1))
+                    END DO
+                END  DO
+                ae(ii-2) = 0.0
+            END IF
+
+            ! Right/South
+            IF (nrgt == 2 .OR. nrgt == 5 .OR. nrgt == 6 .OR. nrgt == 19) THEN
+                DO i = 3, ii-2
+                    DO k = 3, kk-2
+                        ap(k, 3, i) = ap(k, 3, i) &
+                            + as(3)*(bp(k, 2, i)*bp(k, 3, i))
+                    END DO
+                END  DO
+                as(3) = 0.0
+            END IF
+
+            ! Left/North
+            IF (nlft == 2 .OR. nlft == 5 .OR. nlft == 6) THEN
+                DO i = 3, ii-2
+                    DO k = 3, kk-2
+                        ap(k, jj-2, i) = ap(k, jj-2, i) &
+                            + an(jj-2)*(bp(k, jj-2, i)*bp(k, jj-1, i))
+                    END DO
+                END  DO
+                an(jj-2) = 0.0
+            END IF
+
+            ! Bottom
+            IF (nbot == 2 .OR. nbot == 5 .OR. nbot == 6 .OR. nbot == 19) THEN
+                DO i = 3, ii-2
+                    DO j = 3, jj-2
+                        ap(3, j, i) = ap(3, j, i) &
+                            + ab(3)*(bp(2, j, i)*bp(3, j, i))
+                    END DO
+                END  DO
+                ab(3) = 0.0
+            END IF
+
+            ! Top
+            IF (ntop == 2 .OR. ntop == 5 .OR. ntop == 6) THEN
+                DO i = 3, ii-2
+                    DO j = 3, jj-2
+                        ap(kk-2, j, i) = ap(kk-2, j, i) &
+                            + at(kk-2)*(bp(kk-2, j, i)*bp(kk-1, j, i))
+                    END DO
+                END  DO
+                at(kk-2) = 0.0
+            END IF
+        END DO
+    END SUBROUTINE giteig
 
     SUBROUTINE calc_nvecs(this, bzelltyp, au, av, aw, icells, icellspointer, &
             xpsw, nvecs, arealist)
