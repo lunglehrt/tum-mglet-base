@@ -169,9 +169,9 @@ CONTAINS
         CALL this%stencils%finish()
     END SUBROUTINE read_stencils
 
-    SUBROUTINE giteig()
+    SUBROUTINE giteig(this)
         ! Subroutine arguments
-        ! none...
+        CLASS(gc_t), INTENT(inout) :: this
 
         ! Local variables
         INTEGER(intk) :: k, j, i

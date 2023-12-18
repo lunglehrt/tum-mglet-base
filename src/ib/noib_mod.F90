@@ -78,9 +78,9 @@ CONTAINS
     END SUBROUTINE read_stencils
 
 
-    SUBROUTINE giteig()
+    SUBROUTINE giteig(this)
         ! Subroutine arguments
-        ! none...
+        CLASS(noib_t), INTENT(inout) :: this
 
         ! Local variables
         INTEGER(intk) :: k, j, i

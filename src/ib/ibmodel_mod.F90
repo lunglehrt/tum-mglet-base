@@ -51,7 +51,9 @@ MODULE ibmodel_mod
             CLASS(ibmodel_t), INTENT(inout) :: this
         END SUBROUTINE read_stencils_i
 
-        SUBROUTINE giteig_i()
+        SUBROUTINE giteig_i(this)
+            IMPORT :: ibmodel_t
+            CLASS(ibmodel_t), INTENT(inout) :: this
         END SUBROUTINE giteig_i
 
         SUBROUTINE divcal_i(this, div, u, v, w, fak, ctyp)
