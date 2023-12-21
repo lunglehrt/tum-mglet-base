@@ -124,7 +124,12 @@ CONTAINS
         END SELECT
 
         ! Always intialize SIP - it's always used at the coarsest level
-        CALL init_sip()
+        SELECT TYPE(ib)
+        TYPE IS (gc_t)
+            CALL init_sip_gc()
+        TYPE IS (noib_t)
+            CALL init_sip_noib()
+        END SELECT
 
         ! Initialize SOR if enabled
         IF (ityp == 1) THEN
