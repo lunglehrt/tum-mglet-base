@@ -272,7 +272,7 @@ CONTAINS
                             +(1-CEILING(aw(k, j, i))*volp(k, j, i))
 
                         ! Only consider cells for which VOLP > 0
-                        mask = 1-FLOOR(volp(k, j, i)/(ddx(i)*ddy(j)*ddz(k)))
+                        mask = CEILING(MIN(1.0, volp(k, j, i)/(ddx(i)*ddy(j)*ddz(k))))
 
                         gsae(k, j, i) = mask*divide0(areae, vole)
                         gsaw(k, j, i) = mask*divide0(areaw, volw)
