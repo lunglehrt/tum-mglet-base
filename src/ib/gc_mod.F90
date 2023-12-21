@@ -1,5 +1,6 @@
 MODULE gc_mod
     USE core_mod
+    USE simdfunctions_mod, ONLY: divide0
     USE ibmodel_mod, ONLY: ibmodel_t
     USE ibconst_mod, ONLY: maccur
     USE noib_mod, ONLY: noib_t
@@ -179,18 +180,25 @@ CONTAINS
         INTEGER(intk) :: igr, igrid
         INTEGER(intk) :: nfro, nbac, nrgt, nlft, nbot, ntop
 
-        REAL(realk), POINTER, CONTIGUOUS :: dx(:), dy(:), dz(:)
+        TYPE(field_t), POINTER :: au_f, av_f, aw_f
+
+        REAL(realk), POINTER, CONTIGUOUS :: ddx(:), ddy(:), ddz(:)
         REAL(realk), POINTER, CONTIGUOUS :: gsae(:,:,:),  gsaw(:,:,:), &
             gsan(:,:,:), gsas(:,:,:), gsat(:,:,:), gsab(:,:,:)
         REAL(realk), POINTER, CONTIGUOUS :: gsap(:, :, :)
         REAL(realk), POINTER, CONTIGUOUS :: au(:, :, :), av(:,:,:), aw(:,:,:)
+        REAL(realk), POINTER, CONTIGUOUS :: volp(:, :, :)
 
-        REAL(realk) :: be, bw, bn, bs, bt, bb
         REAL(realk) :: areae, areaw, arean, areas, areat, areab
+        REAL(realk) :: vole, volw, voln, vols, volt, volb
+        REAL(realk) :: mask
 
         ! Calculate cell volumes
+        CALL get_field(au_f, "AU")
+        CALL get_field(av_f, "AV")
+        CALL get_field(aw_f, "AW")
         CALL set_field("VOLP")
-        CALL this%calc_volp(this%bzelltyp, au, av, aw, this%icells, &
+        CALL this%calc_volp(this%bzelltyp, au_f, av_f, aw_f, this%icells, &
             this%icellspointer, this%xpsw, this%nvecs)
 
 
@@ -208,12 +216,15 @@ CONTAINS
 
             CALL get_mgdims(kk, jj, ii, igrid)
 
-            CALL get_fieldptr(dx, "DX", igrid)
-            CALL get_fieldptr(dy, "DY", igrid)
-            CALL get_fieldptr(dz, "DZ", igrid)
+            CALL get_fieldptr(ddx, "DDX", igrid)
+            CALL get_fieldptr(ddy, "DDY", igrid)
+            CALL get_fieldptr(ddz, "DDZ", igrid)
+
             CALL get_fieldptr(au, "AU", igrid)
             CALL get_fieldptr(av, "AV", igrid)
             CALL get_fieldptr(aw, "AW", igrid)
+
+            CALL get_fieldptr(volp, "VOLP", igrid)
 
             CALL get_fieldptr(gsaw, "GSAW", igrid)
             CALL get_fieldptr(gsae, "GSAE", igrid)
@@ -224,56 +235,54 @@ CONTAINS
 
             CALL get_fieldptr(gsap, "GSAP", igrid)
 
-            ! Open area of the cell faces
-            areae = au(k, j, i) * ddy(j) * ddz(k)
-            areaw = au(k, j, i-1) * ddy(j) * ddz(k)
-            arean = av(k, j, i) * ddx(i) * ddz(k)
-            areas = av(k, j-1, i) * ddx(i) * ddz(k)
-            areat = aw(k, j, i) * ddx(i) * ddy(j)
-            areab = aw(k-1, j, i) * ddx(i) * ddy(j)
-
-            ! Markers indicating whether the cell faces of the neighbouring
-            ! cells are open or closed
-            be = CEILING(au(k, j, i+1))
-            bw = CEILING(au(k, j, i-1))
-            bn = CEILING(av(k, j+1, i))
-            bs = CEILING(av(k, j-1, i))
-            bt = CEILING(aw(k+1, j, i))
-            bb = CEILING(aw(k-1, j, i))
-
-            DO i = 3, ii-2
-                ae(i) = 2.0/((dx(i-1)+dx(i))*dx(i))
-                aw(i) = 2.0/((dx(i-1)+dx(i))*dx(i-1))
-            END DO
-            DO j = 3, jj-2
-                an(j) = 2.0/((dy(j-1)+dy(j))*dy(j))
-                as(j) = 2.0/((dy(j-1)+dy(j))*dy(j-1))
-            END DO
-            DO k = 3, kk-2
-                at(k) = 2.0/((dz(k-1)+dz(k))*dz(k))
-                ab(k) = 2.0/((dz(k-1)+dz(k))*dz(k-1))
-            END DO
-
             DO i = 3, ii-2
                 DO j = 3, jj-2
                     DO k = 3, kk-2
-                        ap(k, j, i) = -2.0/(dx(i-1)*dx(i)) &
-                            -2.0/(dy(j-1)*dy(j)) &
-                            -2.0/(dz(k-1)*dz(k))
-                    END DO
-                END DO
-            END DO
+                        ! Open area of the cell faces
+                        areae = au(k, j, i) * ddy(j) * ddz(k)
+                        areaw = au(k, j, i-1) * ddy(j) * ddz(k)
+                        arean = av(k, j, i) * ddx(i) * ddz(k)
+                        areas = av(k, j-1, i) * ddx(i) * ddz(k)
+                        areat = aw(k, j, i) * ddx(i) * ddy(j)
+                        areab = aw(k-1, j, i) * ddx(i) * ddy(j)
 
-            DO i = 3, ii-2
-                DO j = 3, jj-2
-                    DO k = 3, kk-2
-                        ap(k, j, i) = ap(k, j, i) &
-                            + aw(i)*(1.0-bp(k, j, i-1)*bp(k, j, i)) &
-                            + ae(i)*(1.0-bp(k, j, i  )*bp(k, j, i+1)) &
-                            + as(j)*(1.0-bp(k, j-1, i)*bp(k, j  , i)) &
-                            + an(j)*(1.0-bp(k, j  , i)*bp(k, j+1, i)) &
-                            + ab(k)*(1.0-bp(k-1, j, i)*bp(k  , j, i)) &
-                            + at(k)*(1.0-bp(k  , j, i)*bp(k+1, j, i))
+                        ! Compute volume of the momentum cells
+                        vole = (1/2)*(volp(k, j, i)+volp(k, j, i+1) &
+                            +(1-CEILING(au(k, j, i-1))*volp(k, j, i) &
+                            +(1-CEILING(au(k, j, i+1))*volp(k, j, i+1))
+
+                        volw = (1/2)*(volp(k, j, i-1)+volp(k, j, i) &
+                            +(1-CEILING(au(k, j, i-2))*volp(k, j, i-1) &
+                            +(1-CEILING(au(k, j, i))*volp(k, j, i))
+
+                        voln = (1/2)*(volp(k, j, i)+volp(k, j+1, i) &
+                            +(1-CEILING(av(k, j-1, i))*volp(k, j, i) &
+                            +(1-CEILING(av(k, j+1, i))*volp(k, j+1, i))
+
+                        vols = (1/2)*(volp(k, j-1, i)+volp(k, j, i) &
+                            +(1-CEILING(av(k, j-2, i))*volp(k, j-1, i) &
+                            +(1-CEILING(av(k, j, i))*volp(k, j, i))
+
+                        volt = (1/2)*(volp(k, j, i)+volp(k+1, j, i) &
+                            +(1-CEILING(aw(k-1, j, i))*volp(k, j, i) &
+                            +(1-CEILING(aw(k+1, j, i))*volp(k+1, j, i))
+
+                        vols = (1/2)*(volp(k-1, j, i)+volp(k, j, i) &
+                            +(1-CEILING(aw(k-2, j, i))*volp(k-1, j, i) &
+                            +(1-CEILING(aw(k, j, i))*volp(k, j, i))
+
+                        ! Only consider cells for which VOLP > 0
+                        mask = 1-FLOOR(volp(k, j, i)/(ddx(i)*ddy(j)*ddz(k)))
+
+                        gsae(k, j, i) = mask*divide0(areae, vole)
+                        gsaw(k, j, i) = mask*divide0(areaw, volw)
+                        gsan(k, j, i) = mask*divide0(arean, voln)
+                        gsas(k, j, i) = mask*divide0(areas, vols)
+                        gsat(k, j, i) = mask*divide0(areat, volt)
+                        gsab(k, j, i) = mask*divide0(areab, volb)
+                        
+                        gsap(k, j, i) = -gsae(k, j, i)-gsaw(k, j, i)-gsan(k, j, i) &
+                            -gsas(k, j, i)-gsat(k, j, i)-gsab(k, j, i)
                     END DO
                 END DO
             END DO
