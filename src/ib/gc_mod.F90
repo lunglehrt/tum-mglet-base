@@ -235,6 +235,7 @@ CONTAINS
 
             CALL get_fieldptr(gsap, "GSAP", igrid)
 
+            ! Compute off-diagonal coefficients
             DO i = 3, ii-2
                 DO j = 3, jj-2
                     DO k = 3, kk-2
@@ -280,9 +281,6 @@ CONTAINS
                         gsas(k, j, i) = mask*divide0(areas, vols)
                         gsat(k, j, i) = mask*divide0(areat, volt)
                         gsab(k, j, i) = mask*divide0(areab, volb)
-                        
-                        gsap(k, j, i) = -gsae(k, j, i)-gsaw(k, j, i)-gsan(k, j, i) &
-                            -gsas(k, j, i)-gsat(k, j, i)-gsab(k, j, i)
                     END DO
                 END DO
             END DO
@@ -291,69 +289,43 @@ CONTAINS
 
             ! Front/West
             IF (nfro == 2 .OR. nfro == 5 .OR. nfro == 6 .OR. nfro == 19) THEN
-                DO j = 3, jj-2
-                    DO k = 3, kk-2
-                        ap(k, j, 3) = ap(k, j, 3) &
-                            + aw(3)*(bp(k, j, 2)*bp(k, j, 3))
-                    END DO
-                END  DO
-                aw(3) = 0.0
+                gsaw(k, j, 3) = 0.0
             END IF
 
             ! Back/East
             IF (nbac == 2 .OR. nbac == 5 .OR. nbac == 6) THEN
-                DO j = 3, jj-2
-                    DO k = 3, kk-2
-                        ap(k, j, ii-2) = ap(k, j, ii-2) &
-                            + ae(ii-2)*(bp(k, j, ii-2)*bp(k, j, ii-1))
-                    END DO
-                END  DO
-                ae(ii-2) = 0.0
+                gsae(k, j, ii-2) = 0.0
             END IF
 
             ! Right/South
             IF (nrgt == 2 .OR. nrgt == 5 .OR. nrgt == 6 .OR. nrgt == 19) THEN
-                DO i = 3, ii-2
-                    DO k = 3, kk-2
-                        ap(k, 3, i) = ap(k, 3, i) &
-                            + as(3)*(bp(k, 2, i)*bp(k, 3, i))
-                    END DO
-                END  DO
-                as(3) = 0.0
+                gsas(k, 3, i) = 0.0
             END IF
 
             ! Left/North
             IF (nlft == 2 .OR. nlft == 5 .OR. nlft == 6) THEN
-                DO i = 3, ii-2
-                    DO k = 3, kk-2
-                        ap(k, jj-2, i) = ap(k, jj-2, i) &
-                            + an(jj-2)*(bp(k, jj-2, i)*bp(k, jj-1, i))
-                    END DO
-                END  DO
-                an(jj-2) = 0.0
+                gsan(k, jj-2, i) = 0.0
             END IF
 
             ! Bottom
             IF (nbot == 2 .OR. nbot == 5 .OR. nbot == 6 .OR. nbot == 19) THEN
-                DO i = 3, ii-2
-                    DO j = 3, jj-2
-                        ap(3, j, i) = ap(3, j, i) &
-                            + ab(3)*(bp(2, j, i)*bp(3, j, i))
-                    END DO
-                END  DO
-                ab(3) = 0.0
+                gsab(3, j, i) = 0.0
             END IF
 
             ! Top
             IF (ntop == 2 .OR. ntop == 5 .OR. ntop == 6) THEN
-                DO i = 3, ii-2
-                    DO j = 3, jj-2
-                        ap(kk-2, j, i) = ap(kk-2, j, i) &
-                            + at(kk-2)*(bp(kk-2, j, i)*bp(kk-1, j, i))
-                    END DO
-                END  DO
-                at(kk-2) = 0.0
+                gsat(kk-2, j, i) = 0.0
             END IF
+           
+            ! Compute diagonal coefficient
+            DO i = 3, ii-2
+                DO j = 3, jj-2
+                    DO k = 3, kk-2
+                        gsap(k, j, i) = -gsae(k, j, i)-gsaw(k, j, i)-gsan(k, j, i) &
+                            -gsas(k, j, i)-gsat(k, j, i)-gsab(k, j, i)
+                    END DO
+                END DO
+            END DO
         END DO
     END SUBROUTINE giteig
 
