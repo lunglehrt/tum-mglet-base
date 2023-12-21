@@ -188,6 +188,12 @@ CONTAINS
         REAL(realk) :: be, bw, bn, bs, bt, bb
         REAL(realk) :: areae, areaw, arean, areas, areat, areab
 
+        ! Calculate cell volumes
+        CALL set_field("VOLP")
+        CALL this%calc_volp(this%bzelltyp, au, av, aw, this%icells, &
+            this%icellspointer, this%xpsw, this%nvecs)
+
+
         ! 3-D fields used in the pressure solver
         CALL set_field("GSAW")
         CALL set_field("GSAE")
@@ -440,6 +446,173 @@ CONTAINS
         END DO
     END SUBROUTINE calc_nvecs_grid
 
+
+    SUBROUTINE calc_volp(this, bzelltyp, au, av, aw, icells, icellspointer, &
+            xpsw, nvecs)
+        ! Subroutine arguments
+        CLASS(gc_t), INTENT(inout) :: this
+        INTEGER(intk), INTENT(in) :: bzelltyp(*)
+        TYPE(field_t), INTENT(in) :: au
+        TYPE(field_t), INTENT(in) :: av
+        TYPE(field_t), INTENT(in) :: aw
+        INTEGER(intk), INTENT(in) :: icells(:)
+        INTEGER(intk), INTENT(in) :: icellspointer(:)
+        REAL(realk), INTENT(in) :: xpsw(:, :)
+        REAL(realk), INTENT(in) :: nvecs(:, :)
+
+        ! Local variables
+        INTEGER(intk) :: i, igrid, kk, jj, ii, ip3, ipp, ncells
+        REAL(realk), POINTER, CONTIGUOUS :: ddx(:), ddy(:), ddz(:)
+        REAL(realk), POINTER, CONTIGUOUS :: x(:), y(:), z(:)
+        REAL(realk), POINTER, CONTIGUOUS :: volp(:,:,:)
+
+        DO i = 1, nmygrids
+            igrid = mygrids(i)
+            CALL get_mgdims(kk, jj, ii, igrid)
+            CALL get_ip3(ip3, igrid)
+            ipp = icellspointer(igrid)
+            ncells = icells(igrid)
+
+            CALL get_fieldptr(x, "X", igrid)
+            CALL get_fieldptr(y, "Y", igrid)
+            CALL get_fieldptr(z, "Z", igrid)
+            CALL get_fieldptr(ddx, "DDX", igrid)
+            CALL get_fieldptr(ddy, "DDY", igrid)
+            CALL get_fieldptr(ddz, "DDZ", igrid)
+            CALL get_fieldptr(volp, "VOLP", igrid)
+
+            CALL this%calc_volp_grid(kk, jj, ii, x, y, z, ddx, ddy, ddz, &
+                bzelltyp(ip3), au%arr(ip3), av%arr(ip3), aw%arr(ip3), &
+                ncells, xpsw(:, ipp:ipp+ncells-1), nvecs(:, ipp:ipp+ncells-1) &
+                volp)
+        END DO
+    END SUBROUTINE calc_volp
+
+    SUBROUTINE calc_volp_grid(kk, jj, ii, x, y, z, ddx, ddy, ddz, bzelltyp, &
+            au, av, aw, ncells, xpsw, nvecs, volp)
+        ! Subroutine arguments
+        INTEGER(intk), INTENT(in) :: kk, jj, ii
+        REAL(realk), INTENT(in) :: x(ii), y(jj), z(kk)
+        REAL(realk), INTENT(in) :: ddx(ii), ddy(jj), ddz(kk)
+        INTEGER(intk), INTENT(in) :: bzelltyp(kk, jj, ii)
+        REAL(realk), INTENT(in) :: au(kk, jj, ii)
+        REAL(realk), INTENT(in) :: av(kk, jj, ii)
+        REAL(realk), INTENT(in) :: aw(kk, jj, ii)
+        INTEGER(intk), INTENT(in) :: ncells
+        REAL(realk), INTENT(in) :: xpsw(:, :)
+        REAL(realk), INTENT(in) :: nvecs(:, :)
+        REAL(realk), INTENT(out) :: volp(kk, jj, ii)
+
+        ! Local variables
+        INTEGER(intk) :: k, j, i, icell
+        REAL(realk) :: nx, ny, nz, dpl, vol
+
+        ! Corresponding to indices in calcauavaw_mod.F90 where this
+        ! code initially came from
+        DO i = 2, ii
+            DO j = 2, jj
+                DO k = 2, kk
+                    IF (bzelltyp(k, j, i) == 1) THEN
+                        volp(k, j, i) = ddx(i)*ddy(j)*ddz(k)
+
+                    ELSE IF (bzelltyp(k, j, i) == 0) THEN
+                        volp(k, j, i) = 0
+
+                    ELSE IF (bzelltyp(k, j, i) < 0) THEN
+                        icell = -bzelltyp(k, j, i)
+
+                        nx = nvecs(1, icell)
+                        ny = nvecs(2, icell)
+                        nz = nvecs(3, icell)
+                        dpl = nvecs(4, icell)
+
+                        CALL calc_volp_cell(x(i), y(j), z(k), &
+                            ddx(i), ddy(j), ddz(k), &
+                            nx, ny, nz, dpl, vol)
+
+                        volp(k, j, i) = vol
+                    ELSE
+                        CYCLE
+                    END IF
+                END DO
+            END DO
+        END DO
+    END SUBROUTINE calc_volp_grid
+
+    SUBROUTINE calc_volp_cell(x, y, z, ddx, ddy, ddz, nx, ny, nz, dpl, vol)
+        ! Subroutine arguments
+        REAL(realk), INTENT(in) :: x, y, z
+        REAL(realk), INTENT(in) :: ddx, ddy, ddz
+        REAL(realk), INTENT(in) :: nx, ny, nz
+        REAL(realk), INTENT(in) :: dpl
+        REAL(realk), INTENT(out) :: vol
+
+        ! Local variables
+        REAL(realk) :: d0
+        REAL(realk) :: n1, n2, n3, d
+        REAL(realk) :: s1, s2, s3
+        REAL(realk) :: fac
+        REAL(realk) :: V
+
+        ! Reference for cube-plane intersection volume
+        !   Lehmann, M. & Gekle, S.: Analytic Solution to the Piecewise Linear
+        !   Interface Construction Problem and its Application in Curvature
+        !   Calculation for Volume-of-Fluid Simulation Codes (2021)
+        !   https://arxiv.org/pdf/2006.12838.pdf
+
+        ! Move origin to cell centre
+        d0 = dpl + nx*x + ny*y + nz*z
+
+        ! Rescale the cell to side length 1
+        nx = nx*ddx/SQRT(ddx**2+ddy**2+ddz**2)
+        ny = ny*ddy/SQRT(ddx**2+ddy**2+ddz**2)
+        nz = nz*ddz/SQRT(ddx**2+ddy**2+ddz**2)
+        d0 = d0/SQRT(ddx**2+ddy**2+ddz**2)
+
+        IF (d0<-(ABS(nx)+ABS(ny)+ABS(nz))/2) THEN
+            vol = 0
+
+        ELSE IF (d0>(ABS(nx)+ABS(ny)+ABS(nz))/2) THEN
+            vol = ddx*ddy*ddz
+
+        ELSE
+
+            ! Orient coordinate system such that 0 <= n1 <= n2 <= n3 <= 1
+            n1 = MIN(ABS(nx), ABS(ny), ABS(nz))
+            n3 = MAX(ABS(nx), ABS(ny), ABS(nz))
+            n2 = ABS(nx)+ABS(ny)+ABS(nz)-n1-n3
+
+            ! Move origin to corner
+            d = (n1+n2+n3)/2-ABS(d0)
+
+            ! Compute volume
+            fac= 1/(6*n1*n2*n3)
+
+            IF (d<n1) THEN
+                V = fac*d**3
+
+            ELSE IF (n1<=d .AND. d<=n2) THEN
+                V = fac*(d**3-(d-n1)**3)
+
+            ELSE IF (n2<=d .AND. d<=MIN(n1+n2,n3)) THEN
+                V = fac*(d**3-(d-n1)**3-(d-n2)**3)
+
+            ELSE IF (n3<=d) THEN
+                V = fac*(d**3-(d-n1)**3-(d-n2)**3-(d-n3)**3)
+
+            ELSE IF (MIN(n1+n2,n3)<=d .AND. d<=n3) THEN
+                V = fac*6*n1*n2*(d-(n1+n2)/2)
+
+            ELSE
+                V = 0
+
+            END IF
+
+            vol = ddx*ddy*ddz*(SIGN(d0)*(1/2-V)+1/2)
+
+        END IF
+
+    END SUBROUTINE
 
     SUBROUTINE divcal(this, div, u, v, w, fak, ctyp)
         ! Subroutine arguments
