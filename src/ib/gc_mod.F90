@@ -610,9 +610,9 @@ CONTAINS
         INTEGER(intk) :: kk, jj, ii
         LOGICAL :: use_sdiv
         TYPE(field_t), POINTER :: rddx_f, rddy_f, rddz_f
-        TYPE(field_t), POINTER :: sdiv_f, bp_f
+        TYPE(field_t), POINTER :: sdiv_f
         REAL(realk), CONTIGUOUS, POINTER :: rddx(:), rddy(:), rddz(:)
-        REAL(realk), CONTIGUOUS, POINTER :: sdiv(:, :, :), bp(:, :, :)
+        REAL(realk), CONTIGUOUS, POINTER :: sdiv(:, :, :)
 
         ! For safety
         NULLIFY(bp_f)
@@ -622,7 +622,6 @@ CONTAINS
         CALL get_field(rddx_f, "RDDX")
         CALL get_field(rddy_f, "RDDY")
         CALL get_field(rddz_f, "RDDZ")
-        CALL get_field(bp_f, "BP")
 
         use_sdiv = .TRUE.
         IF (PRESENT(ctyp)) THEN
@@ -642,12 +641,11 @@ CONTAINS
             CALL rddx_f%get_ptr(rddx, igrid)
             CALL rddy_f%get_ptr(rddy, igrid)
             CALL rddz_f%get_ptr(rddz, igrid)
-            CALL bp_f%get_ptr(bp, igrid)
 
             IF (use_sdiv) CALL sdiv_f%get_ptr(sdiv, igrid)
 
             CALL this%divcal_grid(kk, jj, ii, fak, div%arr(ip3), u%arr(ip3), &
-                v%arr(ip3), w%arr(ip3), rddx, rddy, rddz, bp, sdiv)
+                v%arr(ip3), w%arr(ip3), rddx, rddy, rddz, sdiv)
         END DO
     END SUBROUTINE divcal
 
